@@ -75,6 +75,14 @@ input{width:100%;margin-top:4px;background:#0d0f14;border:1px solid #2a3142;colo
 .trip button{width:auto!important;margin:0!important}
 .hbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .hbtns button{font-size:15px;padding:12px;margin-top:10px}
+.lockbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#161a23;border-radius:16px;padding:10px 14px}
+.lockbar .st{font-weight:700;font-size:15px}
+.lockbar.open .st{color:#5ee08f}.lockbar.shut .st{color:#ffb454}
+.lockbar button{font-size:14px;padding:8px 12px;border-radius:10px}
+input[readonly]{opacity:.6}
+.pwn{font-size:11px;color:#7d8699;text-align:center}
+.err{color:#ff6070;font-size:14px;min-height:18px;margin-top:6px}
+.pwbox label{margin-top:10px}
 </style>
 </head>
 <body>
@@ -105,6 +113,8 @@ input{width:100%;margin-top:4px;background:#0d0f14;border:1px solid #2a3142;colo
 <div class="card"><h2>Simular distancia</h2>
 <div class="sim"><button id="s1">+0.1 km</button><button id="s5">+0.5 km</button><button id="s10">+1 km</button></div>
 <div class="status" style="margin-top:8px">Úsalo si el GPS no está disponible</div></div>
+<div class="lockbar shut" id="lockbar"><span class="st" id="lockSt">🔒 Ajustes bloqueados</span><span><button id="bLock">Desbloquear</button> <button id="bChg">Cambiar contraseña</button></span></div>
+<div class="pwn">Protección solo en este dispositivo/navegador (del lado del cliente); no es seguridad absoluta.</div>
 <div class="card"><h2>Tarifas (MXN)</h2>
 <div class="rates">
 <div><label>Banderazo</label><input id="rBase" type="number" min="0" step="0.5" inputmode="decimal"></div>
@@ -123,6 +133,12 @@ input{width:100%;margin-top:4px;background:#0d0f14;border:1px solid #2a3142;colo
 <a class="lnk green off" id="wa" href="#" target="_blank" rel="noopener">💬 Enviar WhatsApp</a>
 <div class="small" id="sosInfo"></div>
 <button id="bSosClose" style="background:#2a3142">Cancelar</button></div></div>
+<div class="modal" id="pwModal" style="z-index:60"><div class="box pwbox"><h2 id="pwTitle">Contraseña</h2><div class="small" id="pwMsg"></div>
+<div id="fA"><label id="lA">Contraseña</label><input id="pwA" type="password" autocomplete="current-password"></div>
+<div id="fB"><label>Nueva contraseña (mín. 4 caracteres)</label><input id="pwB" type="password" autocomplete="new-password"></div>
+<div id="fC"><label>Confirmar contraseña</label><input id="pwC" type="password" autocomplete="new-password"></div>
+<div class="err" id="pwErr"></div>
+<button id="pwOk" class="go">Aceptar</button><button id="pwCancel" style="background:#2a3142">Cancelar</button></div></div>
 <div class="modal" id="hModal"><div class="box"><h2>📒 Historial</h2><div class="hist" id="hList"></div>
 <div class="hbtns"><button id="bCsv" style="background:#1f6feb">Exportar CSV</button><button id="bClr" class="stop">Borrar todo</button></div>
 <button id="bHClose">Cerrar</button></div></div>
@@ -275,10 +291,10 @@ function renderHist(){
   '<div>'+esc(t.origen||'—')+' → '+esc(t.destino||'—')+'</div>'+
   (t.extras&&t.extras.length?'<div class="tm">Extras: '+t.extras.map(function(e){return esc(e.name)+' '+fmt.format(e.amount)}).join(', ')+'</div>':'')+'</div>'}).join('');
 }
-$('hList').onclick=function(ev){var d=ev.target.getAttribute&&ev.target.getAttribute('data-d');if(d!==null&&d!==undefined&&confirm('¿Eliminar este viaje?')){hist.splice(+d,1);saveHist();renderHist()}};
+$('hList').onclick=function(ev){var d=ev.target.getAttribute&&ev.target.getAttribute('data-d');if(d!==null&&d!==undefined)requireAuth(function(){if(confirm('¿Eliminar este viaje?')){hist.splice(+d,1);saveHist();renderHist()}})};
 $('bHist').onclick=function(){renderHist();$('hModal').classList.add('on')};
 $('bHClose').onclick=function(){$('hModal').classList.remove('on')};
-$('bClr').onclick=function(){if(hist.length&&confirm('¿Borrar TODO el historial? Esta acción no se puede deshacer.')){hist=[];saveHist();renderHist()}};
+$('bClr').onclick=function(){if(hist.length)requireAuth(function(){if(confirm('¿Borrar TODO el historial? Esta acción no se puede deshacer.')){hist=[];saveHist();renderHist()}})};
 $('bCsv').onclick=function(){
  if(!hist.length){alert('No hay viajes para exportar');return}
  var q=function(v){v=String(v==null?'':v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
@@ -288,6 +304,64 @@ $('bCsv').onclick=function(){
  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.download='bitacora-taximetro.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);
 };
+
+/* ---- Bloqueo con contraseña (protección del lado del cliente) ---- */
+var PK='taximetro_pw',unlocked=false,lockT=null,pending=null,pwMode='';
+function getPw(){try{var o=JSON.parse(localStorage.getItem(PK));return o&&o.salt&&o.hash?o:null}catch(e){return null}}
+function hex(buf){return Array.prototype.map.call(new Uint8Array(buf),function(b){return ('0'+b.toString(16)).slice(-2)}).join('')}
+function sha(salt,pw){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(salt+':'+pw)).then(hex)}
+function newSalt(){var a=new Uint8Array(16);crypto.getRandomValues(a);return hex(a)}
+function applyLock(){
+ var lk=!unlocked;
+ ['rBase','rKm','rMin','ePhone'].forEach(function(i){$(i).readOnly=lk});
+ $('lockbar').className='lockbar '+(lk?'shut':'open');
+ $('lockSt').textContent=lk?'🔒 Ajustes bloqueados':'🔓 Ajustes desbloqueados';
+ $('bLock').textContent=lk?'Desbloquear':'Bloquear';
+}
+function lockNow(){unlocked=false;clearTimeout(lockT);applyLock()}
+function unlockNow(){unlocked=true;clearTimeout(lockT);lockT=setTimeout(lockNow,5*60*1000);applyLock()}
+function pwOpen(mode,cb){
+ if(!(window.crypto&&crypto.subtle)){alert('Este navegador no permite la contraseña (requiere HTTPS).');return}
+ pwMode=mode;pending=cb||null;
+ $('pwA').value=$('pwB').value=$('pwC').value='';$('pwErr').textContent='';
+ $('fA').style.display=mode==='setup'?'none':'';
+ $('fB').style.display=mode==='unlock'?'none':'';$('fC').style.display=mode==='unlock'?'none':'';
+ $('lA').textContent=mode==='change'?'Contraseña actual':'Contraseña';
+ $('pwTitle').textContent=mode==='setup'?'Crear contraseña':mode==='change'?'Cambiar contraseña':'Desbloquear ajustes';
+ $('pwMsg').textContent=mode==='setup'?'Crea una contraseña para proteger tarifas, contacto de emergencia e historial.':'';
+ $('pwOk').disabled=false;$('pwModal').classList.add('on');
+ setTimeout(function(){$(mode==='setup'?'pwB':'pwA').focus()},50);
+}
+function pwClose(){$('pwModal').classList.remove('on');pending=null}
+function requireAuth(cb){
+ if(!getPw()){pwOpen('setup',cb);return}
+ if(unlocked){unlockNow();cb();return}
+ pwOpen('unlock',cb);
+}
+function setNew(){
+ var a=$('pwB').value,b=$('pwC').value;
+ if(a.length<4){$('pwErr').textContent='Mínimo 4 caracteres.';return Promise.resolve(false)}
+ if(a!==b){$('pwErr').textContent='Las contraseñas no coinciden.';return Promise.resolve(false)}
+ var salt=newSalt();
+ return sha(salt,a).then(function(h){try{localStorage.setItem(PK,JSON.stringify({salt:salt,hash:h}))}catch(e){$('pwErr').textContent='No se pudo guardar.';return false}return true});
+}
+$('pwOk').onclick=function(){
+ $('pwOk').disabled=true;var cb=pending,mode=pwMode;
+ var fin=function(ok){$('pwOk').disabled=false;if(ok){pwClose();unlockNow();if(cb)cb()}};
+ var fail=function(){$('pwOk').disabled=false};
+ if(mode==='setup'){setNew().then(fin,fail);return}
+ var o=getPw();
+ sha(o.salt,$('pwA').value).then(function(h){
+  if(h!==o.hash){$('pwErr').textContent='Contraseña incorrecta.';fail();return}
+  if(mode==='unlock'){fin(true);return}
+  setNew().then(fin,fail);
+ },fail);
+};
+['pwA','pwB','pwC'].forEach(function(i){$(i).addEventListener('keydown',function(e){if(e.key==='Enter')$('pwOk').click()})});
+$('pwCancel').onclick=pwClose;
+$('bLock').onclick=function(){if(unlocked)lockNow();else requireAuth(function(){})};
+$('bChg').onclick=function(){if(!getPw())pwOpen('setup');else pwOpen('change')};
+['rBase','rKm','rMin','ePhone'].forEach(function(i){$(i).addEventListener('click',function(){if(!unlocked)requireAuth(function(){$(i).focus()})});$(i).addEventListener('input',function(){if(unlocked)unlockNow()})});
 
 var lastKnown=null;
 var ePhone=$('ePhone');try{ePhone.value=localStorage.getItem('taximetro_emergencia')||''}catch(e){}
@@ -311,7 +385,7 @@ $('bShare').onclick=function(){
  else{$('sosInfo').textContent=t}
 };
 window.__sos=function(lat,lon){lastKnown={lat:lat,lon:lon};updateSos()};
-loadInputs();setBtns();render();
+loadInputs();setBtns();render();applyLock();if(!getPw()&&window.crypto&&crypto.subtle)pwOpen('setup');
 })();
 </script>
 </body>
