@@ -89,6 +89,17 @@ input[readonly]{opacity:.6}
 .mapbar button{font-size:14px;padding:8px 12px;border-radius:10px}
 .mapmsg{font-size:12px;color:#ffb454;flex:1}
 .leaflet-container{font:inherit}
+.dest{display:flex;gap:8px;align-items:flex-start}.dest input{flex:1}
+.dest button{font-size:14px;padding:11px 10px;border-radius:10px;white-space:nowrap;margin-top:4px}
+.stopn{width:26px;height:26px;border-radius:50%;background:#ff9f1c;color:#111;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+.pin{font-size:30px;line-height:30px;text-align:center}
+.stl{display:flex;gap:6px;align-items:center}.stl b{width:18px}
+.stl input{margin:0;padding:6px;font-size:15px}.stl input[data-f=name]{flex:1;min-width:0}.stl input[data-f=cost]{width:80px}
+.pk{display:flex;flex-direction:column;width:100%;height:100%;background:#0d0f14;padding:10px;gap:8px}
+#pkMap{flex:1;min-height:200px;border-radius:12px}
+.pk .row2{display:flex;gap:6px}.pk .row2 input{margin:0}.pk .row2 button{font-size:15px;padding:10px 14px;border-radius:10px}
+.pk .seg button{flex:1;font-size:15px;padding:10px;border-radius:10px;background:#2a3142}.pk .seg button.on{background:#1f6feb}
+.pk .act{display:grid;grid-template-columns:2fr 1fr;gap:8px}.pk .act button{padding:14px;font-size:17px}
 </style>
 </head>
 <body>
@@ -111,7 +122,11 @@ input[readonly]{opacity:.6}
 <div class="card od"><h2>Viaje</h2>
 <label>Punto de inicio</label><input id="origen" type="text" placeholder="Ej. Av. Reforma 100" autocomplete="off">
 <button class="sm" id="bLoc" style="width:100%;margin-bottom:10px">📍 Usar mi ubicación</button>
-<label>Destino</label><input id="destino" type="text" placeholder="Ej. Aeropuerto" autocomplete="off" style="margin-bottom:0"></div>
+<label>Destino</label><div class="dest"><input id="destino" type="text" placeholder="Ej. Aeropuerto" autocomplete="off" style="margin-bottom:0"><button id="bPick">🗺️ Elegir en el mapa</button></div></div>
+<div class="card ex"><h2>Paradas</h2><div id="stList"></div>
+<div class="exrow" style="margin-top:8px"><input id="pName" type="text" placeholder="Nombre (opcional)"><input id="pCost" type="number" min="0" step="1" inputmode="decimal" placeholder="$"></div>
+<button class="sm" id="bStHere" style="width:100%;margin-top:8px">📍 Agregar parada aquí</button>
+<div class="small">También puedes agregar paradas desde "Elegir en el mapa". El costo de cada parada se suma al total.</div></div>
 <div class="card ex"><h2>Extras</h2>
 <div class="chips" id="chips"><button data-n="Maletas">🧳 Maletas</button><button data-n="Peaje">🛣️ Peaje</button><button data-n="Espera">⏱️ Espera</button><button data-n="Propina">💵 Propina</button></div>
 <div class="exrow"><input id="exN" type="text" placeholder="Nombre"><input id="exA" type="number" min="0" step="1" inputmode="decimal" placeholder="$"></div>
@@ -148,6 +163,13 @@ input[readonly]{opacity:.6}
 <div class="err" id="pwErr"></div>
 <button id="pwOk" class="go">Aceptar</button><button id="pwCancel" style="background:#2a3142">Cancelar</button></div></div>
 <div class="modal" id="rModal" style="z-index:55"><div class="box"><h2>🗺️ Ruta del viaje</h2><div id="hMap"></div><div class="small" id="rMsg"></div><button id="bRClose">Cerrar</button></div></div>
+<div class="modal" id="pkModal" style="z-index:58;padding:0;align-items:stretch"><div class="pk">
+<div class="row2 seg"><button id="pkD" class="on">🏁 Destino</button><button id="pkP">⛔ Parada</button></div>
+<div class="row2"><input id="pkQ" type="text" placeholder="Buscar dirección o lugar"><button id="pkGo" style="background:#1f6feb">Buscar</button></div>
+<div id="pkMap"></div>
+<div class="row2" id="pkExtra" style="display:none"><input id="pkName" type="text" placeholder="Nombre (opcional)"><input id="pkCost" type="number" min="0" step="1" inputmode="decimal" placeholder="Costo $" style="max-width:110px"></div>
+<div class="small" id="pkMsg">Toca el mapa para colocar el marcador; puedes arrastrarlo.</div>
+<div class="act"><button id="pkOk" class="go" disabled>Confirmar destino</button><button id="pkCancel" style="background:#2a3142">Cancelar</button></div></div></div>
 <div class="modal" id="hModal"><div class="box"><h2>📒 Historial</h2><div class="hist" id="hList"></div>
 <div class="hbtns"><button id="bCsv" style="background:#1f6feb">Exportar CSV</button><button id="bClr" class="stop">Borrar todo</button></div>
 <button id="bHClose">Cerrar</button></div></div>
@@ -167,7 +189,7 @@ function readRates(){
  render();
 }
 ['rBase','rKm','rMin'].forEach(function(i){$(i).addEventListener('input',readRates)});
-function total(){return rates.base+rates.km*meters/1000+rates.min*elapsed/60000+extrasTotal()}
+function total(){return rates.base+rates.km*meters/1000+rates.min*elapsed/60000+extrasTotal()+stopsTotal()}
 function pad(n){return n<10?'0'+n:''+n}
 function hms(ms){var s=Math.floor(ms/1000);return pad(Math.floor(s/3600))+':'+pad(Math.floor(s/60)%60)+':'+pad(s%60)}
 function render(){
@@ -205,7 +227,7 @@ function setBtns(){
 }
 $('bStart').onclick=function(){
  if(state==='running'||state==='stopped'||starting)return;
- var go=function(){starting=false;geocodeDest();$('intro').classList.remove('on');state='running';lastTick=Date.now();timer=setInterval(tick,250);last=null;startGPS();setBtns();};
+ var go=function(){starting=false;if(!destC)geocodeDest();$('intro').classList.remove('on');state='running';lastTick=Date.now();timer=setInterval(tick,250);last=null;startGPS();setBtns();};
  if(state==='idle'&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){
   starting=true;showMap(true);$('intro').classList.add('on');setTimeout(go,2000);startGPS();
  }else{showMap(true);go()}
@@ -222,14 +244,15 @@ $('bStop').onclick=function(){
  ['Banderazo',fmt.format(rates.base)],['Distancia ('+fmt.format(rates.km)+'/km)',fmt.format(dk)],
  ['Tiempo ('+fmt.format(rates.min)+'/min)',fmt.format(tm)]];
  extras.forEach(function(e){rowsS.push(['Extra: '+esc(e.name),fmt.format(e.amount)])});
+ stops.forEach(function(t,i){rowsS.push(['Parada '+(i+1)+': '+esc(t.name||'—'),fmt.format(t.cost)])});
  $('sum').innerHTML=rowsS.map(function(r){return '<div class="row"><span>'+r[0]+'</span><span>'+r[1]+'</span></div>'}).join('')+
  '<div class="row t"><span>Total</span><span>'+fmt.format(total())+'</span></div>';
- hist.unshift({ruta:sample(route,400),origenC:originC,destC:destC,fecha:new Date().toLocaleString('es-MX'),origen:og,destino:ds,duracion:hms(elapsed),km:meters/1000,extras:extras.slice(),extrasTotal:ex,total:total()});
- saveHist();renderExtras();
+ hist.unshift({paradas:stops.map(function(t){return {name:t.name,cost:t.cost,lat:t.lat,lon:t.lon}}),paradasTotal:stopsTotal(),ruta:sample(route,400),origenC:originC,destC:destC,fecha:new Date().toLocaleString('es-MX'),origen:og,destino:ds,duracion:hms(elapsed),km:meters/1000,extras:extras.slice(),extrasTotal:ex,total:total()});
+ saveHist();renderExtras();renderStops();
  $('modal').classList.add('on');
 };
 $('bReset').onclick=function(){
- clearInterval(timer);stopGPS();state='idle';elapsed=0;meters=0;last=null;extras=[];mapClear();showMap(false);$('origen').value='';$('destino').value='';setBtns();renderExtras();status('Listo');
+ clearInterval(timer);stopGPS();state='idle';elapsed=0;meters=0;last=null;extras=[];stops=[];mapClear();showMap(false);$('origen').value='';$('destino').value='';setBtns();renderExtras();renderStops();status('Listo');
 };
 $('bClose').onclick=function(){$('modal').classList.remove('on')};
 function sim(m){return function(){if(state==='stopped')return;meters+=m;render()}}
@@ -298,7 +321,7 @@ function renderHist(){
   return '<div class="trip"><div class="tt"><span>'+fmt.format(t.total)+'</span><button data-d="'+i+'" style="font-size:13px;padding:4px 10px;border-radius:8px;background:#3a2230">Eliminar</button></span></div>'+
   '<div class="tm">'+esc(t.fecha)+' · '+esc(t.duracion)+' · '+t.km.toFixed(2)+' km</div>'+
   '<div>'+esc(t.origen||'—')+' → '+esc(t.destino||'—')+'</div>'+
-  (t.extras&&t.extras.length?'<div class="tm">Extras: '+t.extras.map(function(e){return esc(e.name)+' '+fmt.format(e.amount)}).join(', ')+'</div>':'')+'</div>'}).join('');
+  (t.extras&&t.extras.length?'<div class="tm">Extras: '+t.extras.map(function(e){return esc(e.name)+' '+fmt.format(e.amount)}).join(', ')+'</div>':'')+(t.paradas&&t.paradas.length?'<div class="tm">Paradas: '+t.paradas.map(function(x,j){return (j+1)+'. '+esc(x.name||'—')+' '+fmt.format(x.cost)}).join(', ')+'</div>':'')+'</div>'}).join('');
 }
 $('hList').onclick=function(ev){var rr=ev.target.getAttribute&&ev.target.getAttribute('data-r');if(rr!==null&&rr!==undefined){viewRoute(+rr);return}var d=ev.target.getAttribute&&ev.target.getAttribute('data-d');if(d!==null&&d!==undefined)requireAuth(function(){if(confirm('¿Eliminar este viaje?')){hist.splice(+d,1);saveHist();renderHist()}})};
 $('bHist').onclick=function(){renderHist();$('hModal').classList.add('on')};
@@ -307,8 +330,8 @@ $('bClr').onclick=function(){if(hist.length)requireAuth(function(){if(confirm('�
 $('bCsv').onclick=function(){
  if(!hist.length){alert('No hay viajes para exportar');return}
  var q=function(v){v=String(v==null?'':v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
- var rows=[['Fecha','Origen','Destino','Duración','Distancia (km)','Extras (MXN)','Detalle extras','Total (MXN)']];
- hist.forEach(function(t){rows.push([t.fecha,t.origen,t.destino,t.duracion,t.km.toFixed(2),(t.extrasTotal||0).toFixed(2),(t.extras||[]).map(function(e){return e.name+': '+e.amount}).join('; '),t.total.toFixed(2)])});
+ var rows=[['Fecha','Origen','Destino','Duración','Distancia (km)','Extras (MXN)','Detalle extras','Paradas (MXN)','Detalle paradas','Total (MXN)']];
+ hist.forEach(function(t){rows.push([t.fecha,t.origen,t.destino,t.duracion,t.km.toFixed(2),(t.extrasTotal||0).toFixed(2),(t.extras||[]).map(function(e){return e.name+': '+e.amount}).join('; '),(t.paradasTotal||0).toFixed(2),(t.paradas||[]).map(function(x,k){return (k+1)+'. '+(x.name||'-')+': '+x.cost}).join('; '),t.total.toFixed(2)])});
  var csv='\ufeff'+rows.map(function(r){return r.map(q).join(',')}).join('\r\n');
  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.download='bitacora-taximetro.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},500);
@@ -412,13 +435,14 @@ function mapUpdate(){
  if(sp){if(!startM)startM=dot(sp,'#1faa59','Inicio').addTo(map);else startM.setLatLng(sp)}
  if(destC){if(!destM)destM=dot([destC.lat,destC.lon],'#e11d2e','Destino').addTo(map);else destM.setLatLng([destC.lat,destC.lon])}
  else if(destM){map.removeLayer(destM);destM=null}
+ stopMs.forEach(function(m){map.removeLayer(m)});stopMs=stops.map(function(t,i){return L.marker([t.lat,t.lon],{icon:stopIcon(i+1)}).bindTooltip(stopName(t,i)+' '+fmt.format(t.cost)).addTo(map)});
  if(lastKnown){var c=[lastKnown.lat,lastKnown.lon];if(!curM)curM=dot(c,'#2f81f7','Tú estás aquí').addTo(map);else curM.setLatLng(c);
   if(follow)map.setView(c,Math.max(map.getZoom(),16))}
  else if(sp&&follow)map.setView(sp,15);
 }
 function mapClear(){
  route=[];originC=null;destC=null;follow=true;
- if(map){[startM,destM,curM].forEach(function(m){if(m)map.removeLayer(m)});startM=destM=curM=null;polyL.setLatLngs([])}
+ if(map){stopMs.forEach(function(m){map.removeLayer(m)});stopMs=[];[startM,destM,curM].forEach(function(m){if(m)map.removeLayer(m)});startM=destM=curM=null;polyL.setLatLngs([])}
 }
 $('bCenter').onclick=function(){follow=true;mapUpdate()};
 function geocodeDest(){
@@ -444,10 +468,82 @@ function viewRoute(i){
   var st=t.origenC?[t.origenC.lat,t.origenC.lon]:pts[0];
   dot(st,'#1faa59','Inicio').addTo(hm);dot(pts[pts.length-1],'#2f81f7','Fin').addTo(hm);
   if(t.destC)dot([t.destC.lat,t.destC.lon],'#e11d2e','Destino').addTo(hm);
+  (t.paradas||[]).forEach(function(x,k){L.marker([x.lat,x.lon],{icon:stopIcon(k+1)}).bindTooltip(stopName(x,k)+' '+fmt.format(x.cost)).addTo(hm)});
   setTimeout(function(){hm.invalidateSize();hm.fitBounds(pl.getBounds().pad(.2),{maxZoom:17})},150);
  },function(){$('rMsg').textContent='Mapa no disponible sin conexión.'});
 }
 $('bRClose').onclick=function(){$('rModal').classList.remove('on')};
+
+/* ---- Paradas ---- */
+var stops=[],stopMs=[];
+function stopsTotal(){return stops.reduce(function(a,t){return a+t.cost},0)}
+function stopIcon(n){return L.divIcon({className:'',html:'<div class="stopn">'+n+'</div>',iconSize:[26,26],iconAnchor:[13,13]})}
+function stopName(t,i){return t.name||('Parada '+(i+1))}
+function renderStops(){
+ var dis=state==='stopped'?' disabled':'';
+ $('stList').innerHTML=stops.map(function(t,i){return '<div class="stl li"><b>'+(i+1)+'</b><input data-i="'+i+'" data-f="name" value="'+esc(t.name)+'" placeholder="Parada '+(i+1)+'"'+dis+'><input data-i="'+i+'" data-f="cost" type="number" min="0" step="1" inputmode="decimal" value="'+t.cost+'"'+dis+'>'+(dis?'':'<button data-x="'+i+'">✕</button>')+'</div>'}).join('');
+ render();mapUpdate();
+}
+$('stList').addEventListener('input',function(ev){var i=ev.target.getAttribute('data-i'),f=ev.target.getAttribute('data-f');if(i===null||state==='stopped')return;
+ if(f==='cost'){var v=parseFloat(ev.target.value);stops[+i].cost=isFinite(v)&&v>=0?v:0;render()}else stops[+i].name=ev.target.value});
+$('stList').addEventListener('change',function(){mapUpdate()});
+$('stList').addEventListener('click',function(ev){var x=ev.target.getAttribute('data-x');if(x!==null&&state!=='stopped'){stops.splice(+x,1);renderStops()}});
+function addStop(lat,lon,name,cost){
+ if(state==='stopped'){status('Reinicia para agregar paradas');return false}
+ if(stops.length>=30){status('Máximo 30 paradas');return false}
+ var c=parseFloat(cost);stops.push({name:(name||'').trim(),cost:isFinite(c)&&c>=0?c:0,lat:lat,lon:lon});renderStops();return true}
+$('bStHere').onclick=function(){
+ var go=function(la,lo){if(addStop(la,lo,$('pName').value,$('pCost').value)){$('pName').value='';$('pCost').value=''}};
+ if(lastKnown){go(lastKnown.lat,lastKnown.lon);return}
+ if(!navigator.geolocation){status('GPS no disponible: usa "Elegir en el mapa"');return}
+ navigator.geolocation.getCurrentPosition(function(p){lastKnown={lat:p.coords.latitude,lon:p.coords.longitude};go(lastKnown.lat,lastKnown.lon)},function(){status('No se pudo obtener la ubicación')},{enableHighAccuracy:true,timeout:15000});
+};
+/* ---- Selector en mapa ---- */
+var pk=null,pkMk=null,pkPt=null,pkMode='d',pkLayers=[];
+function pkSetMode(m){pkMode=m;$('pkD').classList.toggle('on',m==='d');$('pkP').classList.toggle('on',m==='p');
+ $('pkExtra').style.display=m==='p'?'flex':'none';$('pkOk').textContent=m==='d'?'Confirmar destino':'Confirmar parada'}
+function pkPlace(ll){
+ pkPt={lat:ll.lat,lon:ll.lng!==undefined?ll.lng:ll.lon};var c=[pkPt.lat,pkPt.lon];
+ if(!pkMk){pkMk=L.marker(c,{draggable:true,icon:L.divIcon({className:'',html:'<div class="pin">📍</div>',iconSize:[30,30],iconAnchor:[15,30]})}).addTo(pk);
+  pkMk.on('dragend',function(){var q=pkMk.getLatLng();pkPt={lat:q.lat,lon:q.lng};$('pkMsg').textContent=pkPt.lat.toFixed(5)+', '+pkPt.lon.toFixed(5)})}
+ else pkMk.setLatLng(c);
+ $('pkOk').disabled=false;$('pkMsg').textContent=pkPt.lat.toFixed(5)+', '+pkPt.lon.toFixed(5);
+}
+function pkOpen(mode){
+ $('pkModal').classList.add('on');pkSetMode(mode);pkPt=null;$('pkOk').disabled=true;$('pkQ').value='';$('pkMsg').textContent='Cargando mapa…';
+ loadLeaflet().then(function(){
+  if(pk){pk.remove();pk=null}pkMk=null;
+  var c=lastKnown?[lastKnown.lat,lastKnown.lon]:null;
+  pk=mkMap('pkMap','pkMsg');pk.setView(c||[19.4326,-99.1332],c?16:12);
+  if(!c&&navigator.geolocation)navigator.geolocation.getCurrentPosition(function(p){lastKnown={lat:p.coords.latitude,lon:p.coords.longitude};if(pk)pk.setView([lastKnown.lat,lastKnown.lon],16)},function(){},{timeout:8000});
+  if(destC)L.circleMarker([destC.lat,destC.lon],{radius:8,color:'#fff',fillColor:'#e11d2e',fillOpacity:1}).bindTooltip('Destino actual').addTo(pk);
+  stops.forEach(function(t,i){L.marker([t.lat,t.lon],{icon:stopIcon(i+1),interactive:false}).addTo(pk)});
+  pk.on('click',function(e){pkPlace(e.latlng)});
+  $('pkMsg').textContent='Toca el mapa para colocar el marcador; puedes arrastrarlo.';
+  setTimeout(function(){pk.invalidateSize()},150);
+ },function(){$('pkMsg').textContent='Mapa no disponible sin conexión.'});
+}
+function pkClose(){$('pkModal').classList.remove('on');if(pk){pk.remove();pk=null;pkMk=null}}
+$('bPick').onclick=function(){pkOpen('d')};
+$('pkD').onclick=function(){pkSetMode('d')};$('pkP').onclick=function(){pkSetMode('p')};
+$('pkCancel').onclick=pkClose;
+$('pkGo').onclick=function(){
+ var q=$('pkQ').value.trim();if(!q||!pk)return;$('pkMsg').textContent='Buscando…';
+ try{var c=new AbortController(),t=setTimeout(function(){c.abort()},8000);
+  fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q),{signal:c.signal}).then(function(r){return r.json()}).then(function(j){clearTimeout(t);
+   if(j&&j[0]&&pk){var ll={lat:+j[0].lat,lng:+j[0].lon};pk.setView([ll.lat,ll.lng],17);pkPlace(ll)}else $('pkMsg').textContent='Sin resultados.'}).catch(function(){$('pkMsg').textContent='No se pudo buscar (¿sin conexión?).'});
+ }catch(e){}
+};
+$('pkQ').addEventListener('keydown',function(e){if(e.key==='Enter')$('pkGo').click()});
+$('pkOk').onclick=function(){
+ if(!pkPt)return;var pt=pkPt;
+ if(pkMode==='p'){if(addStop(pt.lat,pt.lon,$('pkName').value,$('pkCost').value)){$('pkName').value='';$('pkCost').value='';pkClose()}return}
+ destC=pt;$('destino').value=pt.lat.toFixed(5)+', '+pt.lon.toFixed(5);mapUpdate();pkClose();
+ try{var c=new AbortController(),t=setTimeout(function(){c.abort()},6000);
+  fetch('https://nominatim.openstreetmap.org/reverse?format=json&accept-language=es&lat='+pt.lat+'&lon='+pt.lon,{signal:c.signal}).then(function(r){return r.json()}).then(function(j){clearTimeout(t);
+   if(j&&j.display_name&&destC===pt)$('destino').value=j.display_name}).catch(function(){});
+ }catch(e){}
+};
 
 var lastKnown=null;
 var ePhone=$('ePhone');try{ePhone.value=localStorage.getItem('taximetro_emergencia')||''}catch(e){}
