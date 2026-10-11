@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Taxímetro</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0d0f14;color:#e8eaf0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh;display:flex;justify-content:center}
+.app{width:100%;max-width:480px;padding:16px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:18px;color:#9aa3b5;font-weight:600;letter-spacing:.1em;text-transform:uppercase;text-align:center}
+.total{background:#161a23;border-radius:20px;padding:22px;text-align:center}
+.total .lbl{color:#9aa3b5;font-size:14px}
+.total .val{font-size:68px;font-weight:800;color:#ffd23f;font-variant-numeric:tabular-nums;line-height:1.1}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{background:#161a23;border-radius:16px;padding:14px;text-align:center}
+.stat .v{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:#9aa3b5}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button{font:inherit;font-size:20px;font-weight:700;border:0;border-radius:16px;padding:18px;color:#fff;background:#2a3142;cursor:pointer}
+button:active{transform:scale(.97)}
+button:disabled{opacity:.35}
+.go{background:#1faa59;grid-column:span 2}.pause{background:#d98a00}.stop{background:#d64545}
+.status{text-align:center;font-size:13px;color:#9aa3b5;min-height:18px}
+.card{background:#161a23;border-radius:16px;padding:14px}
+.card h2{margin:0 0 10px;font-size:14px;color:#9aa3b5;text-transform:uppercase;letter-spacing:.08em}
+.rates{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+label{font-size:12px;color:#9aa3b5;display:block}
+input{width:100%;margin-top:4px;background:#0d0f14;border:1px solid #2a3142;color:#fff;border-radius:10px;padding:10px;font-size:18px}
+.sim{display:flex;gap:10px}.sim button{font-size:16px;padding:12px;flex:1}
+.modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.on{display:flex}
+.box{background:#161a23;border-radius:20px;padding:22px;width:100%;max-width:420px}
+.box h2{margin:0 0 12px}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a3142}
+.row.t{font-size:24px;font-weight:800;color:#ffd23f;border:0}
+.box button{width:100%;margin-top:14px}
+
+.app{padding-bottom:96px}
+.sos{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom));width:calc(100% - 32px);max-width:448px;background:#e11d2e;font-size:22px;letter-spacing:.12em;box-shadow:0 0 0 3px #0d0f14,0 6px 24px #e11d2eaa;z-index:20}
+.sos:active{transform:translateX(-50%) scale(.97)}
+.lnk{display:block;text-align:center;text-decoration:none;color:#fff;font-weight:700;font-size:18px;padding:16px;border-radius:14px;margin-top:10px;background:#2a3142}
+.lnk.red{background:#e11d2e}.lnk.green{background:#1faa59}
+.lnk.off{opacity:.4;pointer-events:none}
+.box.sosb h2{color:#ff6070}
+.small{font-size:12px;color:#9aa3b5;margin-top:8px;word-break:break-all}
+.intro{position:fixed;inset:0;background:#0d0f14;display:none;align-items:center;justify-content:center;z-index:50;perspective:900px;flex-direction:column;gap:30px}
+.intro.on{display:flex;animation:fadeout .4s ease 1.6s forwards}
+.scene{width:160px;height:160px;transform-style:preserve-3d;animation:flip 2s cubic-bezier(.3,.1,.2,1) forwards}
+.coin{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:84px;font-weight:900;color:#7a5b00;background:radial-gradient(circle at 35% 30%,#fff2a8,#ffd23f 55%,#c99700);border:6px solid #e6b400}
+.coin.f{transform:translateZ(10px)}
+.coin.b{transform:rotateY(180deg) translateZ(10px)}
+.coin.m{transform:translateZ(0);background:#b88a00;border-color:#b88a00;color:transparent}
+.coin.m2{transform:translateZ(5px);background:#b88a00;border-color:#b88a00;color:transparent}
+.coin.m3{transform:translateZ(-5px);background:#b88a00;border-color:#b88a00;color:transparent}
+.itxt{color:#ffd23f;font-weight:800;letter-spacing:.2em;font-size:20px;animation:pop 2s ease forwards}
+@keyframes flip{0%{transform:translateY(-300px) rotateX(70deg) rotateY(0) scale(.3);opacity:0}25%{opacity:1}
+70%{transform:translateY(0) rotateX(15deg) rotateY(900deg) scale(1.1)}100%{transform:translateY(0) rotateX(0) rotateY(1080deg) scale(1)}}
+@keyframes pop{0%,40%{opacity:0;transform:translateY(10px)}70%,100%{opacity:1;transform:none}}
+@keyframes fadeout{to{opacity:0}}
+@media (prefers-reduced-motion:reduce){.intro{display:none!important}.scene,.itxt{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🚕 Taxímetro</h1>
+<div class="total"><div class="lbl">Total a pagar</div><div class="val" id="total">$0.00</div></div>
+<div class="stats">
+<div class="stat"><div class="v" id="time">00:00:00</div><div class="l">Tiempo</div></div>
+<div class="stat"><div class="v" id="dist">0.00 km</div><div class="l">Distancia</div></div>
+</div>
+<div class="status" id="status">Listo</div>
+<div class="btns">
+<button class="go" id="bStart">Iniciar</button>
+<button class="pause" id="bPause" disabled>Pausar</button>
+<button class="stop" id="bStop" disabled>Detener</button>
+<button id="bReset" style="grid-column:span 2">Reiniciar</button>
+</div>
+<div class="card"><h2>Simular distancia</h2>
+<div class="sim"><button id="s1">+0.1 km</button><button id="s5">+0.5 km</button><button id="s10">+1 km</button></div>
+<div class="status" style="margin-top:8px">Úsalo si el GPS no está disponible</div></div>
+<div class="card"><h2>Tarifas (MXN)</h2>
+<div class="rates">
+<div><label>Banderazo</label><input id="rBase" type="number" min="0" step="0.5" inputmode="decimal"></div>
+<div><label>Por km</label><input id="rKm" type="number" min="0" step="0.5" inputmode="decimal"></div>
+<div><label>Por min</label><input id="rMin" type="number" min="0" step="0.5" inputmode="decimal"></div>
+</div></div>
+<div class="card"><h2>Contacto de emergencia</h2>
+<label>Teléfono (con lada, ej. 5512345678)</label><input id="ePhone" type="tel" inputmode="tel" placeholder="5512345678"></div>
+</div>
+<button class="sos" id="bSos">🚨 EMERGENCIA</button>
+<div class="intro" id="intro" aria-hidden="true"><div class="scene"><div class="coin m3"></div><div class="coin m"></div><div class="coin m2"></div><div class="coin f">$</div><div class="coin b">🚕</div></div><div class="itxt">INICIANDO VIAJE</div></div>
+<div class="modal" id="sosModal"><div class="box sosb"><h2>🚨 Emergencia</h2>
+<div>¿Necesitas ayuda? Elige una opción:</div>
+<a class="lnk red" href="tel:911">📞 Llamar al 911</a>
+<button id="bShare">📍 Compartir mi ubicación</button>
+<a class="lnk green off" id="wa" href="#" target="_blank" rel="noopener">💬 Enviar WhatsApp</a>
+<div class="small" id="sosInfo"></div>
+<button id="bSosClose" style="background:#2a3142">Cancelar</button></div></div>
+<div class="modal" id="modal"><div class="box"><h2>Resumen del viaje</h2><div id="sum"></div><button id="bClose">Cerrar</button></div></div>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var KEY='taximetro_tarifas', DEF={base:30,km:9,min:2.5};
+var rates=Object.assign({},DEF);
+try{var s=JSON.parse(localStorage.getItem(KEY));if(s)for(var k in DEF)if(isFinite(s[k])&&s[k]>=0)rates[k]=+s[k];}catch(e){}
+var fmt=new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'});
+var starting=false,state='idle',elapsed=0,lastTick=0,meters=0,last=null,watchId=null,timer=null,gps=false;
+function loadInputs(){$('rBase').value=rates.base;$('rKm').value=rates.km;$('rMin').value=rates.min}
+function readRates(){
+ [['rBase','base'],['rKm','km'],['rMin','min']].forEach(function(p){var v=parseFloat($(p[0]).value);rates[p[1]]=isFinite(v)&&v>=0?v:0});
+ try{localStorage.setItem(KEY,JSON.stringify(rates))}catch(e){}
+ render();
+}
+['rBase','rKm','rMin'].forEach(function(i){$(i).addEventListener('input',readRates)});
+function total(){return rates.base+rates.km*meters/1000+rates.min*elapsed/60000}
+function pad(n){return n<10?'0'+n:''+n}
+function hms(ms){var s=Math.floor(ms/1000);return pad(Math.floor(s/3600))+':'+pad(Math.floor(s/60)%60)+':'+pad(s%60)}
+function render(){
+ $('total').textContent=fmt.format(total());
+ $('time').textContent=hms(elapsed);
+ $('dist').textContent=(meters/1000).toFixed(2)+' km';
+}
+function status(t){$('status').textContent=t}
+function tick(){var n=Date.now();elapsed+=n-lastTick;lastTick=n;render()}
+function hav(a,b){var R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lon-a.lon)*r;
+ var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)*Math.sin(dn/2);
+ return 2*R*Math.asin(Math.sqrt(x))}
+function onPos(p){
+ gps=true;
+ lastKnown={lat:p.coords.latitude,lon:p.coords.longitude};
+ if(state!=='running')return;
+ var acc=p.coords.accuracy;
+ if(acc>50){status('GPS impreciso (±'+Math.round(acc)+' m), ignorando');return}
+ var pt={lat:p.coords.latitude,lon:p.coords.longitude};
+ if(last){var d=hav(last,pt);if(d>=3)meters+=d;else{status('GPS activo (±'+Math.round(acc)+' m)');return}}
+ last=pt;status('GPS activo (±'+Math.round(acc)+' m)');render();
+}
+function onErr(e){status('GPS no disponible: usa "Simular distancia"')}
+function startGPS(){
+ if(!navigator.geolocation){status('GPS no disponible: usa "Simular distancia"');return}
+ if(watchId===null)watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+ status('Buscando señal GPS…');
+}
+function stopGPS(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
+function setBtns(){
+ $('bStart').disabled=state==='running'||state==='stopped';
+ $('bStart').textContent=state==='paused'?'Reanudar':'Iniciar';
+ $('bPause').disabled=state!=='running';
+ $('bStop').disabled=state!=='running'&&state!=='paused';
+}
+$('bStart').onclick=function(){
+ if(state==='running'||state==='stopped'||starting)return;
+ var go=function(){starting=false;$('intro').classList.remove('on');state='running';lastTick=Date.now();timer=setInterval(tick,250);last=null;startGPS();setBtns();};
+ if(state==='idle'&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){
+  starting=true;$('intro').classList.add('on');setTimeout(go,2000);startGPS();
+ }else go();
+};
+$('bPause').onclick=function(){
+ if(state!=='running')return;tick();clearInterval(timer);state='paused';last=null;status('En pausa');setBtns();
+};
+$('bStop').onclick=function(){
+ if(state==='running'){tick();clearInterval(timer)}
+ if(state!=='running'&&state!=='paused')return;
+ state='stopped';stopGPS();setBtns();render();status('Viaje terminado');
+ var tm=rates.min*elapsed/60000,dk=rates.km*meters/1000;
+ $('sum').innerHTML=[['Tiempo',hms(elapsed)],['Distancia',(meters/1000).toFixed(2)+' km'],
+ ['Banderazo',fmt.format(rates.base)],['Distancia ('+fmt.format(rates.km)+'/km)',fmt.format(dk)],
+ ['Tiempo ('+fmt.format(rates.min)+'/min)',fmt.format(tm)]].map(function(r){return '<div class="row"><span>'+r[0]+'</span><span>'+r[1]+'</span></div>'}).join('')+
+ '<div class="row t"><span>Total</span><span>'+fmt.format(total())+'</span></div>';
+ $('modal').classList.add('on');
+};
+$('bReset').onclick=function(){
+ clearInterval(timer);stopGPS();state='idle';elapsed=0;meters=0;last=null;setBtns();render();status('Listo');
+};
+$('bClose').onclick=function(){$('modal').classList.remove('on')};
+function sim(m){return function(){if(state==='stopped')return;meters+=m;render()}}
+$('s1').onclick=sim(100);$('s5').onclick=sim(500);$('s10').onclick=sim(1000);
+
+var lastKnown=null;
+var ePhone=$('ePhone');try{ePhone.value=localStorage.getItem('taximetro_emergencia')||''}catch(e){}
+ePhone.addEventListener('input',function(){try{localStorage.setItem('taximetro_emergencia',ePhone.value.trim())}catch(e){}updateSos()});
+function locLink(){return lastKnown?'https://www.google.com/maps?q='+lastKnown.lat.toFixed(6)+','+lastKnown.lon.toFixed(6):null}
+function sosText(){var l=locLink();return l?'¡Emergencia! Estoy en un taxi. Mi ubicación: '+l:'¡Emergencia! Estoy en un taxi. (Ubicación GPS no disponible)'}
+function updateSos(){
+ var l=locLink(),ph=ePhone.value.replace(/\D/g,''),wa=$('wa');
+ if(ph.length===10)ph='52'+ph;
+ if(ph.length>=10){wa.href='https://wa.me/'+ph+'?text='+encodeURIComponent(sosText());wa.classList.remove('off')}
+ else{wa.href='#';wa.classList.add('off')}
+ $('sosInfo').textContent=l?'Ubicación: '+l:'Sin posición GPS todavía. Inicia el viaje y espera la señal.';
+}
+$('bSos').onclick=function(){updateSos();$('sosModal').classList.add('on');if(navigator.geolocation&&!lastKnown)navigator.geolocation.getCurrentPosition(function(p){lastKnown={lat:p.coords.latitude,lon:p.coords.longitude};updateSos()},function(){},{timeout:8000})};
+$('bSosClose').onclick=function(){$('sosModal').classList.remove('on')};
+$('bShare').onclick=function(){
+ var l=locLink();if(!l){updateSos();return}
+ var t=sosText();
+ if(navigator.share){navigator.share({title:'Emergencia',text:t,url:l}).catch(function(){})}
+ else if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){$('sosInfo').textContent='Enlace copiado: '+l},function(){$('sosInfo').textContent=t})}
+ else{$('sosInfo').textContent=t}
+};
+window.__sos=function(lat,lon){lastKnown={lat:lat,lon:lon};updateSos()};
+loadInputs();setBtns();render();
+})();
+</script>
+</body>
+</html>
